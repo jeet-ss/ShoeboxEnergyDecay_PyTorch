@@ -1,0 +1,10 @@
+events.out.tfevents*
+*.ckp
+*.ckpt
+*.yaml
+*.npy
+*.pyc
+*.pt
+*.html
+*.gv
+*.svg
