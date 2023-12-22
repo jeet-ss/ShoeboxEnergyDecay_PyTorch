@@ -19,18 +19,19 @@ def db2mag(arr):
 
 
 def generate_stochasticRIR(L, c=343, fs = 48000):
+    # return frequency dependent RIR
     V = torch.prod(L)   # L catBack
     # Define params
     fs = 48000
-    rec = L * torch.tensor([0.41, 0.23, 0.41])      # relative Receiver position [x y z]
-    src = L * torch.tensor([0.82, 0.64, 0.55])      # relative Source position [x y z]'
+    # rec = L * torch.tensor([0.41, 0.23, 0.41])      # relative Receiver position [x y z]
+    # src = L * torch.tensor([0.82, 0.64, 0.55])      # relative Source position [x y z]'
     rt60 = torch.tensor([1.0, 0.8, 0.7, 0.6, 0.5, 0.4]) * 2.0       # per octave band
     nBands = len(rt60)
     # # 
     beta = torch.sqrt(1 - find_abs_coeffs_from_rt(L, rt60)[0])      
     beta = db2mag(mag2db(beta) + 0.1 * (torch.rand_like(beta) - 0.5))
     maxTime = torch.max(rt60).item()
-    limitsTime = torch.ones(nBands) * maxTime
+    # limitsTime = torch.ones(nBands) * maxTime
     # #
     band_centerfreqs = torch.zeros(nBands)
     band_centerfreqs[0] = 125.0     # lowest octave band

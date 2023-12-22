@@ -17,7 +17,7 @@ def _get_fs(fs, nyq):
 
 
 def firwin_torch(numtaps, cutoff, width=None, window='hamming', pass_zero=True,
-           scale=True, nyq=None, fs=None, idx=None):
+           scale=True, nyq=None, fs=None, idx=None, device='cpu'):
     
 
     nyq = 0.5 * _get_fs(fs, nyq)
@@ -82,7 +82,7 @@ def firwin_torch(numtaps, cutoff, width=None, window='hamming', pass_zero=True,
 
     # Insert 0 and/or 1 at the ends of cutoff so that the length of cutoff
     # is even, and each pair in cutoff corresponds to passband.
-    cutoff = torch.hstack((torch.tensor([0.0] * pass_zero), cutoff, torch.tensor([1.0] * pass_nyquist)))
+    cutoff = torch.hstack((torch.tensor([0.0] * pass_zero).to(device=device), cutoff, torch.tensor([1.0] * pass_nyquist).to(device=device)))
 
     # `bands` is a 2-D array; each row gives the left and right edges of
     # a passband.
@@ -90,17 +90,18 @@ def firwin_torch(numtaps, cutoff, width=None, window='hamming', pass_zero=True,
 
     # Build up the coefficients.
     alpha = 0.5 * (numtaps - 1)
-    m = torch.arange(0, numtaps) - alpha
-    h = 0
+    m = torch.arange(0, numtaps).to(device=device) - alpha
+    h = torch.zeros(m.size(0)).to(device=device)
     for left, right in bands:
-        h += right * torch.sinc(right * m)
+        temp = torch.sinc(right * m)
+        h += right * temp
         h -= left * torch.sinc(left * m)
 
     # Get and apply the window function.
     # from .windows import get_window
     # win = get_window(window, numtaps, fftbins=False)
     if window == 'hamming':
-        win = torch.hamming_window(numtaps)
+        win = torch.hamming_window(numtaps).to(device=device)
     else:
         raise ValueError("Only hamming window is Implemented")
     h = h * win

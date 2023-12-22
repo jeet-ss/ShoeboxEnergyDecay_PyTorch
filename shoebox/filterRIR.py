@@ -6,7 +6,7 @@ from shoebox.firwin_torch import firwin_torch
 #from shoebox.firwin_scipy import firwin_scipy
 
 def filter_rir(rir, f_center, fs):
-    nBands = rir.shape[1]
+    nBands = rir.size(1)
 
     if len(f_center) != nBands:
         raise ValueError('The number of bands should match the number of columns in the 2nd dimension of rir')
@@ -41,6 +41,7 @@ def filter_rir(rir, f_center, fs):
                 w = torch.tensor([fl / (fs / 2), fh / (fs / 2)])
                 filters[:, i] = firwin_torch(order + 1, w, pass_zero='bandpass', fs=fs, idx = i)
 
+        # padding 
         temp_rir = torch.cat([rir, torch.zeros(order, nBands)])
 
         rir_filt = torch.zeros(rir.size(0))
@@ -60,5 +61,3 @@ def filter_rir(rir, f_center, fs):
 
         return rir_full
 
-# Example usage:
-# rir_full_result = filter_rir(torch.tensor(rir), torch.tensor(f_center), fs)
