@@ -12,6 +12,7 @@ def generate_stochastic_rir_del(del_Kx, del_Ky, del_Kz, fs=48000, c=343, use_pre
     L = torch.tensor([3,4,5])
     V = torch.prod(L)
     # 
+    eps = 2.2204e-16
     max_time = 2.0
     fs = 48000
     c = 343
@@ -33,7 +34,8 @@ def generate_stochastic_rir_del(del_Kx, del_Ky, del_Kz, fs=48000, c=343, use_pre
     # if H.requires_grad : H.register_hook(lambda x : print("H", H.grad_fn,torch.any(torch.isnan(x))))
     # uniform sampling of damping density for the decay envelope
     time = torch.arange(1, max_time * fs + 1).to(device=device) / fs
-    envelope = torch.sqrt(torch.exp(c * time.unsqueeze(1) * sigma) @ H * torch.mean(torch.diff(sigma)))
+    envelope = torch.sqrt(torch.clamp(torch.exp(c * time.unsqueeze(1) * sigma) @ H * torch.mean(torch.diff(sigma)), min=torch.tensor(eps).to(device=device)) )
+    # envelope = torch.sqrt(torch.exp(c * time.unsqueeze(1) * sigma) @ H * torch.mean(torch.diff(sigma)))
 
     # shape noise
     h = envelope * torch.randn(len(time)).to(device=device)

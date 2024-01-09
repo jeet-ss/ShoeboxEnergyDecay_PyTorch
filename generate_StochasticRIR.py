@@ -3,15 +3,15 @@ import torch
 from util.applyPressureSource import apply_pressure_source
 from util.analyticDampingDensity import analytic_damping_density
 
-def generate_stochastic_rir(Kx, Ky, Kz, fs=48000, c=343, use_pressure_source=False, device='cpu'):
+def generate_stochastic_rir(Kx, Ky, Kz, fs=48000, c=343, max_time=2.0, use_pressure_source=False, device='cpu'):
 #(max_time, beta, L, c, fs, use_pressure_source=False):
     # Predefine L 
     L = torch.tensor([3,4,5])
     V = torch.prod(L)
     eps=2.2204e-16
     # 
-    max_time = 2.0
-    fs = 48000
+    # max_time = 2.0
+    # fs = 48000
     c = 343
     # if Ky.requires_grad : Ky.register_hook(lambda x : print("Ky: ", Ky.grad_fn,Ky.data, torch.isnan(x)))
     Kyxz = torch.concatenate((Kx.view(-1,1), Ky.view(-1,1), Kz.view(-1,1)))
@@ -23,7 +23,7 @@ def generate_stochastic_rir(Kx, Ky, Kz, fs=48000, c=343, use_pressure_source=Fal
     sigma = torch.linspace(min_sigma.item() - 0.01, max_sigma.item() + 0.01, 1000).to(device=device)
     
     H, p = analytic_damping_density(sigma, Kxyz, V, device=device)
-    H = H / (4 * torch.pi)  # this is an unexplained tuning factor
+    H = H / (4 * torch.pi)  
     # if H.requires_grad : H.register_hook(lambda x : print("H",x[500:510], H.grad_fn,H.data[500:510],torch.any(torch.isnan(x))))
     # uniform sampling of damping density for the decay envelope
     time = torch.arange(1, max_time * fs + 1).to(device=device) / fs
