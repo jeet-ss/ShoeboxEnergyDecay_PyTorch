@@ -1,7 +1,8 @@
 import torch
 from scipy.optimize import minimize, fmin
+from torchmin import minimize
 
-def find_abs_coeffs_from_rt(room, rt60_target, abs_wall_ratios=None):
+def find_abs_coeffs_from_rt(room, rt60_target, abs_wall_ratios=None, device='cpu'):
     if abs_wall_ratios is None:
         abs_wall_ratios = torch.ones(6)
 
@@ -19,6 +20,8 @@ def find_abs_coeffs_from_rt(room, rt60_target, abs_wall_ratios=None):
         rt60 = rt60_target[nb]
         x_min = fmin(funct2, 0.0001, disp=False)
         x_min = x_min[0]
+        # minimizer = minimize(funct2, 0.0001, method='bfgs')
+        # x_min = minimizer.fun
         rt60_true[nb] = rt60 + funct(x_min)
         alpha_walls[nb, :] = torch.min(x_min * abs_wall_ratios, torch.ones_like(abs_wall_ratios))
 

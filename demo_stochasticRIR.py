@@ -12,7 +12,7 @@ from shoebox.filterRIR import filter_rir
 # Set the seed for reproducibility
 #torch.manual_seed(1)
 np.random.seed(1)
-
+device = 'cuda'
 # Define parameters for example room
 L = torch.tensor([4.0, 5.0, 3.0])
 c = 343.0
@@ -45,9 +45,10 @@ for it in range(nBands):
 #torch.save(h_temp2, 'h_temp2.pt')
 h_stochastic = filter_rir(h_temp2, band_centerfreqs, fs)
 #torch.save(h_stochastic, 'h_stochastic.pt')
-
+print(h_stochastic.size())
+np.save('dsd.npy', h_stochastic.detach().cpu().numpy())
 plt.figure()
-plt.plot(h_stochastic.detach())
+plt.plot(h_stochastic.detach().cpu().numpy())
 plt.show()
 
 # # Image Sources

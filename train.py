@@ -1,107 +1,166 @@
 import torch
+import numpy as np
 import matplotlib.pyplot as plt
+import argparse
 
-from generateRIR import generate_stochasticRIR
-from generate_StochasticRIR import generate_stochastic_rir
-from model import RIR_model
+from model import RIR_model, RIR_model_del
+from optimizer_utils.bandRIR import rir_bands
+from optimizer_utils.enveloper import envelope_generator
+from optimizer_utils.helpers import calculate_damping_coeff, calculate_del_K, calculate_K_from_delK
+
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 dtype = torch.cuda.FloatTensor if torch.cuda.is_available() else torch.FloatTensor
 
-# class RIR_mod(torch.nn.Module):
-#     def __init__(self,) :
-#         super().__init__()
-#         self.L1 = torch.nn.Parameter(torch.randint(2,4,(1,)).float())
-#         self.L2 = torch.nn.Parameter(torch.randint(8,10,(1,)).float())
-#         self.L3 = torch.nn.Parameter(torch.randint(6,9,(1,)).float())
-#         #self.K = torch.nn.Parameter(torch.linspace(0.5,1,100))
-#         #self.x = torch.linspace(-1, 1, 100)
-        
 
-#     def forward(self):
-#         #return self.a*self.x + self.b
-#         #return generate_stochasticRIR(L=torch.Tensor([self.L1, self.L2, self.L3]))
-#         return generate_stochasticRIR(L=torch.cat((self.L1,self.L2,self.L3)))#.cuda()
-    
-# def env_maker(arr, filter_ = np.ones(4096)):
-#     filter_avg = filter_/np.sum(filter_)
-#     sqq = arr**2
-#     xs = signal.convolve(sqq.detach(), filter_avg, mode='same')
-#     in_db = control.mag2db(xs)
-#     return torch.Tensor(in_db)
 def mag2db(xcv):
     return 20 * xcv.log10_()
 
-def env_maker0(arr, filter_=torch.ones(2047), gain=None, clip_=None):
-    if gain is not None:
-        arr = arr * (10**(gain/20))
-    filter_avg = filter_/torch.sum(filter_)
-    sqq = arr**2
-    smoothed = torch.nn.functional.conv1d(sqq.reshape(1,-1), filter_avg.reshape(1,1,-1), bias=None, stride=1, padding='same' ).reshape(-1,)
-    #in_db = mag2db(smoothed)
-    if clip_ is not None:
+def optimize_stochasticRIR(args):
+    # hyper params
+    iter_ = 500
+    lr = 0.0000003
+    env_filter_len = 2047
+    signal_gain = 100    # dB
+    dB_clip = -150
+    normalize = True
+    # optimization params
+    device = 'cuda'
+    logging_frequency = 100     # epochs  
+    stopping_criterion = 200    # epochs \ must be < 0.5* iter
+    accepted_loss = 4       # dB
+    convergence_trials = 3
+    model_used = RIR_model
+    known_data = False  # True for generated Data
+    #load data
+    data_count = 2     # default: None
+    data_np = np.load(args.fp, allow_pickle=False)
+    rir_data = torch.tensor(data_np[:data_count, :], dtype=torch.float).to(device=device)
+    #
+    #
+    rir_convergence_Counter = 0
+    for i in range(rir_data.size(0)):
+        print(f"\n---------------- Datapoint number: {i+1} out of {rir_data.size(0)} ----------------")
+        
+        if known_data:
+            # for generated data
+            lengths, betas, rir_ = rir_data[i, :3], rir_data[i, 3:9], rir_data[i, 9:]
+            labels = rir_bands(rir_, device=device)
+            target_K_values = calculate_damping_coeff(betas, lengths)
+            print(f"Target Kvalues: {target_K_values}")
+        else:
+            # for real world data 
+            labels = rir_bands(rir_data[i, :], device=device)
+
+        # define counters and storage arrays
+        nBands = labels.size(1)
+        k_array = torch.zeros((nBands, 3))#.to(device=device)    # store K values for all bands
+        band_convergence_counter = 0
+        band_giveUp_counter = 0
         #
-        in_db = torch.clip(in_db, min=clip_)
-    return smoothed
+        for j in range(nBands):
+            # for each frequency band
+            print(f"\n-------- Frequency Band: {j+1} --------")
+            
+            # define flags and counters
+            not_converged = True
+            convergence_flag = False
+            giveUp_flag = False
+            converge_counter = 0
+            best_param_dict = {}
+            while not_converged:
+                best_param_dict = {}
+                converge_counter += 1
+                print(f"\n---- Trial number: {converge_counter} ---- ")
+                # create label envelope
+                l_env = envelope_generator(labels[:, j], filter_len=env_filter_len , gain=signal_gain, clip_=dB_clip, normalise=normalize,device=device)
+                # Initialization
+                mod = model_used(device=device).to(device=device)
+                crit = torch.nn.L1Loss().to(device=device)
+                optim = torch.optim.SGD(mod.parameters(),lr=lr)
+                init_param_dict = {}
+                print("\nInitial model Params:")
+                for name, param in mod.named_parameters():
+                    if param.requires_grad:
+                        print( name,': ', param.data)
+                        init_param_dict.update({name:param.data.clone()})
+                print("\nOptimization process starts:")
+                # Gradient descent
+                t_l = []
+                early_stopping = 0
+                min_loss = torch.inf
+                for it in range(iter_):
+                    optim.zero_grad()
+                    y_hat = mod.forward()
+                    x_env = envelope_generator(y_hat, filter_len=env_filter_len, gain=signal_gain, clip_=dB_clip, normalise=normalize, device=device)
+                    l = crit(x_env, l_env)
+                    l.backward()
+                    optim.step()
+                    log_l = l.detach().cpu()
+                    t_l.append(log_l)
+                    # early stopping
+                    # early stopping for convergent cases
+                    if log_l < min_loss:
+                        min_loss = log_l
+                        # save params
+                        best_param_dict.update({'min_loss': min_loss})
+                        for name, param in mod.named_parameters():
+                            if param.requires_grad:
+                                best_param_dict.update({name: param.data.clone()})
+                    else:
+                        early_stopping += 1       
+                    if early_stopping > stopping_criterion: 
+                        # converge case
+                        if min_loss < accepted_loss: 
+                            print("converged!")
+                            not_converged=False   
+                            band_convergence_counter += 1
+                            convergence_flag = True
+
+                        # tried but not converged  
+                        if converge_counter >= convergence_trials: 
+                            print("Give Up!")
+                            not_converged=False
+                            band_giveUp_counter += 1
+                            giveUp_flag = True
+                        
+                        break
+                    if it%logging_frequency == 0 : print(f'Loss in epoch:{it} is : {l.detach()}')
+                
+
+            print(f"\nUpdated model for band:")
+            final_param_collector = {} #torch.zeros((1)).to(device=device)            
+            if giveUp_flag:
+                # take the best 
+                print("best params:", best_param_dict)
+                #final_param_collector = torch.concat((final_param_collector, best_param_dict['del_Kx'].view(-1), best_param_dict['del_Ky'].view(-1), best_param_dict['del_Kz'].view(-1)))
+                # final_param_collector = torch.concat((final_param_collector, torch.tensor(list(best_param_dict)[1:]).to(device=device) .view(-1) ))
+                for key in best_param_dict:
+                    if key == 'min_loss':
+                        continue
+                    else:
+                        final_param_collector.update({key: best_param_dict[key]})
+            else:
+                for name, param in mod.named_parameters():
+                    if param.requires_grad:
+                        print( name,': ', param.data)
+                        final_param_collector.update({name: param.data})
+            print(f"\nMin Loss: {best_param_dict['min_loss']} in dB")
+            print(f"Final model params for band-{j+1}: {final_param_collector}")
+            final_param_tensor = torch.tensor(list(final_param_collector.values()))
+            k_array[j, :] = final_param_tensor
+            # 
+            if model_used == RIR_model_del:
+                final_K_values = calculate_K_from_delK(final_param_tensor[0], final_param_tensor[1], final_param_tensor[2])
+                print(f"\nFinal K values: Kx: {final_K_values[0]}, Ky: {final_K_values[1]}, Kz: {final_K_values[2]}")                       
+        #   
+        print(f"\n################################### \n K values for all Bands of RIR-{i+1}: \n {k_array}\n Converged for {band_convergence_counter} bands \n ################################### ")
+        if band_convergence_counter == 6 : rir_convergence_Counter += 1 
+    print(f"\nTotal Rir converged: {rir_convergence_Counter} out of {rir_data.size(0)}")
 
 if __name__ == '__main__':
-    ##
-    #torch.manual_seed(2)
-    labels = generate_stochasticRIR(L=torch.Tensor([4,3,3]))#.cuda())#.cuda()
-    # labels = generate_stochastic_rir(Kx=torch.tensor(-0.012),Ky=torch.tensor( -0.016),Kz=torch.tensor( -0.018))
-    #l_env = torch.Tensor(ob.envelope(labels.detach())).float().requires_grad_().cuda()
-    #l_env = env_maker(labels).float().requires_grad_().cuda()
-    #
-    mod = RIR_model()#.cuda()
-    crit = torch.nn.MSELoss()#.cuda()
-    optim = torch.optim.SGD(mod.parameters(),lr=0.001)
-    print("Inital Params: \n")
-    for name, param in mod.named_parameters():
-        if param.requires_grad:
-            print( name,': ', param.data)
-    # plt.figure(1)
-    # plt.plot(labels)
-    # #plt.show()
-    # y_env = env_maker0(labels)
-    # plt.figure(2)
-    # plt.plot(y_env)
-    #plt.show()
-    def pack_hook(x):
-        print("Packing", x.size(), x.grad_fn)
-        return x
+    parser = argparse.ArgumentParser(description='Training of SPICE model for F0 estimation')
+    parser.add_argument('--fp', '-filepath', type=str, default="./real_room_ir.npy", help='file path of data')
+    args = parser.parse_args()
 
-    def unpack_hook(x):
-        if torch.any(torch.isnan(x)):
-            print("Unpacking Nan: ", x.size(), x.grad_fn)
-        else:
-            print("Unpacking: ", x.size(), x.grad_fn)
-        return x
-    
-    t_l = []
-    for i in range(50):
-        optim.zero_grad()
-        y_hat = mod.forward()
-        # x_env = env_maker0(y_hat)
-        # y_env = env_maker0(labels)
-        l = torch.sum(torch.abs(y_hat - labels))
-        # l = crit(labels, y_hat)
-        #yy = y_hat.detach().cpu()
-        #env_y = ob.envelope(yy).float().requires_grad_().cuda()
-        #env_y = env_maker(yy).float().requires_grad_().cuda()
-        # l = crit(x_env, y_env)
-        l.backward()
-        # mod.float()
-        optim.step()
-        t_l.append(l.detach().cpu())
-        if i%2 == 0:print(f'Loss in epoch:{i} is : {l.detach()}')
-
-    
-    print("Updated Params: \n")
-    for name, param in mod.named_parameters():
-        if param.requires_grad:
-            print( name,': ', param.data)
-
-    #
-    # plt.figure(2)
-    # plt.plot(t_l)
-    plt.show()
+    optimize_stochasticRIR(args)
