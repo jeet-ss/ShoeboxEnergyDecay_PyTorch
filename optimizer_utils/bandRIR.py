@@ -23,16 +23,16 @@ def rir_bands(rir, f_center=None, fs=16000, device='cpu'):
                 fl = 30
                 fh = (f_center[i] * f_center[i + 1]).sqrt()
                 w = torch.tensor([fl / (fs / 2), fh / (fs / 2)]).to(device=device)
-                filters[:, i] = firwin_torch(order + 1, w, pass_zero='bandpass', fs=fs, idx = i, device=device)
+                filters[:, i] = firwin_torch(order + 1, w, pass_zero='bandpass', idx = i, device=device)
             elif i == nBands - 1:
                 fl = (f_center[i] * f_center[i - 1]).sqrt()
                 w = torch.tensor([fl / (fs / 2)]).to(device=device)
-                filters[:, i] = firwin_torch(order + 1, w, pass_zero='highpass', fs=fs, idx = i, device=device)
+                filters[:, i] = firwin_torch(order + 1, w, pass_zero='highpass', idx = i, device=device)
             else:
                 fl = (f_center[i] * f_center[i - 1]).sqrt()
                 fh = (f_center[i] * f_center[i + 1]).sqrt()
                 w = torch.tensor([fl / (fs / 2), fh / (fs / 2)]).to(device=device)
-                filters[:, i] = firwin_torch(order + 1, w, pass_zero='bandpass', fs=fs, idx = i, device=device)
+                filters[:, i] = firwin_torch(order + 1, w, pass_zero='bandpass', idx = i, device=device)
         # padding
         temp_rir = torch.cat([rir, torch.zeros(order).to(device=device)])
 
