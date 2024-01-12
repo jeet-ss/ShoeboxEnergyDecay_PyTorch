@@ -1,6 +1,5 @@
 import numpy as np
 import rir_generator as rir
-import tqdm
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 
 def generate_ism(n_data=400, sr=8000, samples=4096 ):

@@ -1,9 +1,6 @@
 import torch
-#from scipy.signal import fftconvolve, firwin
-#import matplotlib.pyplot as plt
 
 from shoebox.firwin_torch import firwin_torch
-#from shoebox.firwin_scipy import firwin_scipy
 
 def filter_rir(rir, f_center, fs):
     nBands = rir.size(1)

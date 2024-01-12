@@ -1,6 +1,5 @@
 import torch
-from scipy.optimize import minimize, fmin
-from torchmin import minimize
+from scipy.optimize import fmin
 
 def find_abs_coeffs_from_rt(room, rt60_target, abs_wall_ratios=None, device='cpu'):
     if abs_wall_ratios is None:
