@@ -33,7 +33,7 @@ def optimize_stochasticRIR(args):
     model_used = RIR_model
     known_data = False  # True for generated Data
     #load data
-    data_count = 2     # default: None
+    data_count = None     # default: None
     data_np = np.load(args.fp, allow_pickle=False)
     rir_data = torch.tensor(data_np[:data_count, :], dtype=torch.float).to(device=device)
     #
@@ -61,7 +61,8 @@ def optimize_stochasticRIR(args):
         for j in range(nBands):
             # for each frequency band
             print(f"\n-------- Frequency Band: {j+1} --------")
-            
+            # create label envelope
+            l_env = envelope_generator(labels[:, j], filter_len=env_filter_len , gain=signal_gain, clip_=dB_clip, normalise=normalize,device=device)
             # define flags and counters
             not_converged = True
             convergence_flag = False
@@ -72,8 +73,6 @@ def optimize_stochasticRIR(args):
                 best_param_dict = {}
                 converge_counter += 1
                 print(f"\n---- Trial number: {converge_counter} ---- ")
-                # create label envelope
-                l_env = envelope_generator(labels[:, j], filter_len=env_filter_len , gain=signal_gain, clip_=dB_clip, normalise=normalize,device=device)
                 # Initialization
                 mod = model_used(device=device).to(device=device)
                 crit = torch.nn.L1Loss().to(device=device)
@@ -101,6 +100,7 @@ def optimize_stochasticRIR(args):
                     # early stopping
                     # early stopping for convergent cases
                     if log_l < min_loss:
+                        early_stopping = 0
                         min_loss = log_l
                         # save params
                         best_param_dict.update({'min_loss': min_loss})
