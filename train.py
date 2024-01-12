@@ -110,23 +110,21 @@ def optimize_stochasticRIR(args):
                     else:
                         early_stopping += 1       
                     if early_stopping > stopping_criterion: 
-                        # converge case
-                        if min_loss < accepted_loss: 
-                            print("converged!")
-                            not_converged=False   
-                            band_convergence_counter += 1
-                            convergence_flag = True
-
-                        # tried but not converged  
-                        if converge_counter >= convergence_trials: 
-                            print("Give Up!")
-                            not_converged=False
-                            band_giveUp_counter += 1
-                            giveUp_flag = True
-                        
                         break
                     if it%logging_frequency == 0 : print(f'Loss in epoch:{it} is : {l.detach()}')
-                
+                # converge case
+                if min_loss < accepted_loss: 
+                    print("converged!")
+                    not_converged=False   
+                    band_convergence_counter += 1
+                    convergence_flag = True
+
+                # tried but not converged  
+                if converge_counter >= convergence_trials: 
+                    print("Give Up!")
+                    not_converged=False
+                    band_giveUp_counter += 1
+                    giveUp_flag = True   
 
             print(f"\nUpdated model for band:")
             final_param_collector = {} #torch.zeros((1)).to(device=device)            
