@@ -16,9 +16,9 @@ class RIR_model(torch.nn.Module):
             self.Kz = torch.nn.Parameter(torch.tensor(Kz))            
         else:
             # Random Initialization
-            self.Kx = torch.nn.Parameter(torch.randint(-200, -100, (1,)).float()*0.0001)
-            self.Ky = torch.nn.Parameter(torch.randint(-200, -100, (1,)).float()*0.0001)
-            self.Kz = torch.nn.Parameter(torch.randint(-200, -100, (1,)).float()*0.0001)
+            self.Kx = torch.nn.Parameter(torch.randint(-2000, -100, (1,)).float()*0.0001)
+            self.Ky = torch.nn.Parameter(torch.randint(-2000, -100, (1,)).float()*0.0001)
+            self.Kz = torch.nn.Parameter(torch.randint(-2000, -100, (1,)).float()*0.0001)
         #
         self.device = device
         
@@ -37,9 +37,9 @@ class RIR_model_del(torch.nn.Module):
             self.del_Kz = torch.nn.Parameter(torch.tensor(del_Kz)) 
         else:
             # Random Initialization
-            self.kx = torch.randint(-200, -100, (1,)).float()*0.0001
-            self.ky = torch.randint(-200, -100, (1,)).float()*0.0001
-            self.kz = torch.randint(-200, -100, (1,)).float()*0.0001
+            self.kx = torch.randint(-2000, -100, (1,)).float()*0.0001
+            self.ky = torch.randint(-2000, -100, (1,)).float()*0.0001
+            self.kz = torch.randint(-2000, -100, (1,)).float()*0.0001
             self.kes = torch.sort(torch.cat([self.kx.view(-1), self.ky.view(-1), self.kz.view(-1)]))[0]
             self.del_Kx = torch.nn.Parameter(self.kes[0])
             self.del_Ky = torch.nn.Parameter(self.kes[1] - self.kes[0])

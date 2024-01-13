@@ -5,7 +5,7 @@ import argparse
 
 from model import RIR_model, RIR_model_del
 from optimizer_utils.bandRIR import rir_bands
-from optimizer_utils.enveloper import envelope_generator
+from optimizer_utils.enveloper import envelope_generator, rir_smoothing
 from optimizer_utils.helpers import calculate_damping_coeff, calculate_del_K, calculate_K_from_delK
 
 
@@ -18,19 +18,20 @@ def mag2db(xcv):
 
 def optimize_stochasticRIR(args):
     # hyper params
-    iter_ = 500
-    lr = 0.0000003
-    env_filter_len = 2047
-    signal_gain = 100    # dB
+    iter_ = 2500
+    lr = 0.000003
+    env_filter_len = 4096
+    signal_gain = None    # dB
     dB_clip = -150
     normalize = True
     # optimization params
     device = 'cuda'
     logging_frequency = 100     # epochs  
-    stopping_criterion = 200    # epochs \ must be < 0.5* iter
-    accepted_loss = 4       # dB
-    convergence_trials = 3
-    model_used = RIR_model
+    stopping_criterion = 200   # epochs \ must be < 0.5* iter
+    accepted_loss = 5       # dB
+    good_loss = 2
+    convergence_trials = 30
+    model_used = RIR_model_del
     known_data = False  # True for generated Data
     #load data
     data_count = None     # default: None
@@ -62,7 +63,7 @@ def optimize_stochasticRIR(args):
             # for each frequency band
             print(f"\n-------- Frequency Band: {j+1} --------")
             # create label envelope
-            l_env = envelope_generator(labels[:, j], filter_len=env_filter_len , gain=signal_gain, clip_=dB_clip, normalise=normalize,device=device)
+            l_env = envelope_generator(rir_smoothing(labels[:, j], filter_len=env_filter_len, device=device ), gain=signal_gain, clip_=dB_clip, normalise=normalize,device=device)
             # define flags and counters
             not_converged = True
             convergence_flag = False
@@ -91,7 +92,7 @@ def optimize_stochasticRIR(args):
                 for it in range(iter_):
                     optim.zero_grad()
                     y_hat = mod.forward()
-                    x_env = envelope_generator(y_hat, filter_len=env_filter_len, gain=signal_gain, clip_=dB_clip, normalise=normalize, device=device)
+                    x_env = envelope_generator(y_hat, gain=signal_gain, clip_=dB_clip, normalise=normalize, device=device)
                     l = crit(x_env, l_env)
                     l.backward()
                     optim.step()
@@ -110,6 +111,8 @@ def optimize_stochasticRIR(args):
                     else:
                         early_stopping += 1       
                     if early_stopping > stopping_criterion: 
+                        break
+                    if min_loss < good_loss:
                         break
                     if it%logging_frequency == 0 : print(f'Loss in epoch:{it} is : {l.detach()}')
                 # converge case
