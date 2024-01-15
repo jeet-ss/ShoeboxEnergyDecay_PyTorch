@@ -37,8 +37,8 @@ def generate_stochastic_rir_del(del_Kx, del_Ky, del_Kz, noise_level=-0.001, fs=4
     # if H.requires_grad : H.register_hook(lambda x : print("H", H.grad_fn,torch.any(torch.isnan(x))))
     # uniform sampling of damping density for the decay envelope
     time = torch.arange(1, max_time * fs + 1).to(device=device) / fs
-    envv = torch.sqrt(torch.clamp(torch.exp(c * time.unsqueeze(1) * sigma) @ H * torch.mean(torch.diff(sigma)), min=torch.tensor(eps).to(device=device)) )
-    envelope = envv #+ torch.exp(noise_level)# if torch.is_tensor(noise_level) else torch.tensor(noise_level)) # torch.exp()
+    envelope = torch.exp(noise_level) + torch.sqrt(torch.clamp(torch.exp(c * time.unsqueeze(1) * sigma) @ H * torch.mean(torch.diff(sigma)), min=torch.tensor(eps).to(device=device)) )
+    #envelope = envv #+ torch.exp(noise_level)# if torch.is_tensor(noise_level) else torch.tensor(noise_level)) # torch.exp()
     # if noise_level.requires_grad : noise_level.register_hook(lambda x : print("noise_level2", noise_level, noise_level.grad_fn,torch.any(torch.isnan(x))))
     # envelope = torch.sqrt(torch.exp(c * time.unsqueeze(1) * sigma) @ H * torch.mean(torch.diff(sigma)))
     # if envelope.requires_grad : envelope.register_hook(lambda x : print("envelope", envelope.grad_fn,torch.any(torch.isnan(x))))

@@ -32,6 +32,7 @@ def optimize_stochasticRIR(args):
     good_loss = 2
     converging_loss = 5
     convergence_trials = 30
+    lossUpdate_thresh = 0.05
     model_used = RIR_model_del
     known_data = False  # True for generated Data
     #load data
@@ -41,7 +42,9 @@ def optimize_stochasticRIR(args):
     rir_data = torch.tensor(data_np[data_start:data_count, :], dtype=torch.float).to(device=device)
     #
     #
+    label_names = ['Kx', 'Ky', 'Kz', 'Noise', 'Convergence']
     rir_convergence_Counter = 0
+    rir_notConverged_memory = []
     for i in range(rir_data.size(0)):
         print(f"\n---------------- Datapoint number: {i+1} out of {rir_data.size(0)} ----------------")
         
@@ -57,7 +60,7 @@ def optimize_stochasticRIR(args):
 
         # define counters and storage arrays
         nBands = labels.size(1)
-        k_array = torch.zeros((nBands, 3))#.to(device=device)    # store K values for all bands
+        k_array = torch.zeros((nBands, 4))#.to(device=device)    # store K values for all bands
         band_convergence_counter = 0
         band_giveUp_counter = 0
         #
@@ -103,7 +106,8 @@ def optimize_stochasticRIR(args):
                     t_l.append(log_l)
                     # early stopping
                     # early stopping for convergent cases
-                    if log_l < min_loss:
+                    #if log_l < min_loss:
+                    if min_loss - log_l > lossUpdate_thresh:
                         early_stopping = 0
                         min_loss = log_l
                         # save params
@@ -132,7 +136,7 @@ def optimize_stochasticRIR(args):
                     band_giveUp_counter += 1
                     giveUp_flag = True   
 
-                #
+                # check global convergence among trials
                 if min_loss < global_loss:
                     global_loss = min_loss
                     best_param_dict = bbest_param_dict
@@ -141,34 +145,34 @@ def optimize_stochasticRIR(args):
             final_param_collector = {} #torch.zeros((1)).to(device=device)            
             if giveUp_flag:
                 if global_loss < converging_loss:
-                    print("converged 2!")
+                    print("converged 2nd Criteria!")
                     band_convergence_counter += 1
                 # take the best 
                 print("best params:", best_param_dict)
-                #final_param_collector = torch.concat((final_param_collector, best_param_dict['del_Kx'].view(-1), best_param_dict['del_Ky'].view(-1), best_param_dict['del_Kz'].view(-1)))
-                # final_param_collector = torch.concat((final_param_collector, torch.tensor(list(best_param_dict)[1:]).to(device=device) .view(-1) ))
                 for key in best_param_dict:
                     if key == 'min_loss':
                         continue
                     else:
-                        final_param_collector.update({key: best_param_dict[key]})
+                        final_param_collector.update({key: best_param_dict[key].detach().cpu()})
             else:
                 for name, param in mod.named_parameters():
                     if param.requires_grad:
                         print( name,': ', param.data)
-                        final_param_collector.update({name: param.data})
+                        final_param_collector.update({name: param.data.detach().cpu()})
             print(f"\nMin Loss: {best_param_dict['min_loss']} in dB")
             print(f"Final model params for band-{j+1}: {final_param_collector}")
-            final_param_tensor = torch.tensor(list(final_param_collector.values()))
-            k_array[j, :] = final_param_tensor
+            final_param_tensor = list(final_param_collector.values())
+            final_param_tensor.append(convergence_flag)
+            k_array[j, :] = torch.tensor(final_param_tensor)
             # 
             if model_used == RIR_model_del:
                 final_K_values = calculate_K_from_delK(final_param_tensor[0], final_param_tensor[1], final_param_tensor[2])
                 print(f"\nFinal K values: Kx: {final_K_values[0]}, Ky: {final_K_values[1]}, Kz: {final_K_values[2]}")                       
         #   
-        print(f"\n################################### \n K values for all Bands of RIR-{i+1}: \n {k_array}\n Converged for {band_convergence_counter} bands \n ################################### ")
-        if band_convergence_counter == 6 : rir_convergence_Counter += 1 
-    print(f"\nTotal Rir converged: {rir_convergence_Counter} out of {rir_data.size(0)}")
+        print(f"\n################################### \n K values for all Bands of RIR-{i+1}: \n {label_names} \n {k_array}\n Converged for {band_convergence_counter} bands \n ################################### ")
+        if band_convergence_counter == 6 : rir_convergence_Counter += 1
+        else : rir_notConverged_memory.append((i, band_convergence_counter))    # save rir not converged index
+    print(f"--------------\nTotal Rir converged: {rir_convergence_Counter} out of {rir_data.size(0)} \n Rir not converged: {rir_notConverged_memory}\n--------------")
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Training of SPICE model for F0 estimation')
