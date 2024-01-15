@@ -57,4 +57,4 @@ class RIR_model_del(torch.nn.Module):
             # print("INSIDE_GRAD", gradd, self.noise_level)
             return torch.clamp(gradd*100, -clip_value)#, clip_value)
         self.noise_level.register_hook(my_hook)
-        return generate_stochastic_rir_del(del_Kx=self.del_Kx, del_Ky=self.del_Ky, del_Kz=self.del_Kz, device=self.device)
+        return generate_stochastic_rir_del(del_Kx=self.del_Kx, del_Ky=self.del_Ky, del_Kz=self.del_Kz,noise_level=self.noise_level, device=self.device)
