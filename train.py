@@ -18,25 +18,27 @@ def mag2db(xcv):
 
 def optimize_stochasticRIR(args):
     # hyper params
-    iter_ = 2500
+    iter_ = 1000
     lr = 0.000003
-    env_filter_len = 4096
+    env_filter_len = 4095
     signal_gain = None    # dB
     dB_clip = -150
     normalize = True
     # optimization params
     device = 'cuda'
     logging_frequency = 100     # epochs  
-    stopping_criterion = 200   # epochs \ must be < 0.5* iter
-    accepted_loss = 5       # dB
+    stopping_criterion = 300   # epochs \ must be < 0.5* iter
+    accepted_loss = 6       # dB
     good_loss = 2
+    converging_loss = 5
     convergence_trials = 30
     model_used = RIR_model_del
     known_data = False  # True for generated Data
     #load data
-    data_count = None     # default: None
+    data_start = int(args.ds)
+    data_count = int(args.de)     # default: None
     data_np = np.load(args.fp, allow_pickle=False)
-    rir_data = torch.tensor(data_np[:data_count, :], dtype=torch.float).to(device=device)
+    rir_data = torch.tensor(data_np[data_start:data_count, :], dtype=torch.float).to(device=device)
     #
     #
     rir_convergence_Counter = 0
@@ -70,8 +72,9 @@ def optimize_stochasticRIR(args):
             giveUp_flag = False
             converge_counter = 0
             best_param_dict = {}
+            global_loss = torch.inf
             while not_converged:
-                best_param_dict = {}
+                bbest_param_dict = {}
                 converge_counter += 1
                 print(f"\n---- Trial number: {converge_counter} ---- ")
                 # Initialization
@@ -104,10 +107,10 @@ def optimize_stochasticRIR(args):
                         early_stopping = 0
                         min_loss = log_l
                         # save params
-                        best_param_dict.update({'min_loss': min_loss})
+                        bbest_param_dict.update({'min_loss': min_loss})
                         for name, param in mod.named_parameters():
                             if param.requires_grad:
-                                best_param_dict.update({name: param.data.clone()})
+                                bbest_param_dict.update({name: param.data.clone()})
                     else:
                         early_stopping += 1       
                     if early_stopping > stopping_criterion: 
@@ -129,9 +132,17 @@ def optimize_stochasticRIR(args):
                     band_giveUp_counter += 1
                     giveUp_flag = True   
 
+                #
+                if min_loss < global_loss:
+                    global_loss = min_loss
+                    best_param_dict = bbest_param_dict
+
             print(f"\nUpdated model for band:")
             final_param_collector = {} #torch.zeros((1)).to(device=device)            
             if giveUp_flag:
+                if global_loss < converging_loss:
+                    print("converged 2!")
+                    band_convergence_counter += 1
                 # take the best 
                 print("best params:", best_param_dict)
                 #final_param_collector = torch.concat((final_param_collector, best_param_dict['del_Kx'].view(-1), best_param_dict['del_Ky'].view(-1), best_param_dict['del_Kz'].view(-1)))
@@ -162,6 +173,8 @@ def optimize_stochasticRIR(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Training of SPICE model for F0 estimation')
     parser.add_argument('--fp', '-filepath', type=str, default="./real_room_ir.npy", help='file path of data')
+    parser.add_argument('--ds', '-dataStart', type=str, default=0, help='start index of data')
+    parser.add_argument('--de', '-dataEnd', type=str, default=6, help='end index of data')
     args = parser.parse_args()
 
     optimize_stochasticRIR(args)
