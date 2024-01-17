@@ -10,7 +10,7 @@ unset SLURM_EXPORT_ENV
 export SRUN_CPUS_PER_TASK=$SLURM_CPUS_PER_TASK
 
 #module load python/3.10-anaconda
-source $HOME/.rir/bin/activate
+source $HOME/.gen/bin/activate
 cd $HPCVAULT/ShoeboxEnergyDecay_PyTorch
 #
 srun python generate_data.py

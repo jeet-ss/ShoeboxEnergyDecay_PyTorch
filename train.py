@@ -2,6 +2,7 @@ import torch
 import numpy as np
 import matplotlib.pyplot as plt
 import argparse
+import pandas as pd
 
 from model import RIR_model, RIR_model_del
 from optimizer_utils.bandRIR import rir_bands
@@ -18,7 +19,7 @@ def mag2db(xcv):
 
 def optimize_stochasticRIR(args):
     # hyper params
-    iter_ = 1000
+    iter_ = 600
     lr = 0.000003
     env_filter_len = 4095
     signal_gain = None    # dB
@@ -27,24 +28,28 @@ def optimize_stochasticRIR(args):
     # optimization params
     device = 'cuda'
     logging_frequency = 100     # epochs  
-    stopping_criterion = 300   # epochs \ must be < 0.5* iter
-    accepted_loss = 6       # dB
-    good_loss = 2
-    converging_loss = 5
-    convergence_trials = 30
-    lossUpdate_thresh = 0.05
+    stopping_criterion = 200   # epochs \ must be < 0.5* iter
+    accepted_loss = 6    # good enough loss to stop searching # dB
+    good_loss = 1    # minimum loss required - loss lower than this is arbitrary
+    converging_loss = 8    # maximum accepted loss
+    convergence_trials = 5
+    lossUpdate_thresh = 0.09
     model_used = RIR_model_del
-    known_data = False  # True for generated Data
+    known_data = True  # True for generated Data
+    save_K_array = True
     #load data
     data_start = int(args.ds)
-    data_count = int(args.de)     # default: None
+    data_count = int(args.de) if args.de is not None else args.de     # default: None
+    print(args.fp.split('.')[1])
     data_np = np.load(args.fp, allow_pickle=False)
     rir_data = torch.tensor(data_np[data_start:data_count, :], dtype=torch.float).to(device=device)
     #
     #
-    label_names = ['Kx', 'Ky', 'Kz', 'Noise', 'Convergence']
+    label_names = ['Kx', 'Ky', 'Kz', 'Noise', 'Convergence', 'Min_Loss', 'Rir_No']
+    Final_kArray = torch.zeros((1, len(label_names)))
     rir_convergence_Counter = 0
     rir_notConverged_memory = []
+    print(f"data used: {data_start}, {data_count}")
     for i in range(rir_data.size(0)):
         print(f"\n---------------- Datapoint number: {i+1} out of {rir_data.size(0)} ----------------")
         
@@ -60,8 +65,9 @@ def optimize_stochasticRIR(args):
 
         # define counters and storage arrays
         nBands = labels.size(1)
-        k_array = torch.zeros((nBands, 4))#.to(device=device)    # store K values for all bands
+        k_array = torch.zeros((nBands, len(label_names)))#.to(device=device)    # store K values for all bands
         band_convergence_counter = 0
+        band_convergence_counter2 = 0
         band_giveUp_counter = 0
         #
         for j in range(nBands):
@@ -121,16 +127,15 @@ def optimize_stochasticRIR(args):
                         break
                     if min_loss < good_loss:
                         break
-                    if it%logging_frequency == 0 : print(f'Loss in epoch:{it} is : {l.detach()}')
+                    if it%logging_frequency == 0 : print(f'Loss in epoch:{it} ist : {l.detach()}')
                 # converge case
                 if min_loss < accepted_loss: 
                     print("converged!")
                     not_converged=False   
                     band_convergence_counter += 1
-                    convergence_flag = True
-
-                # tried but not converged  
-                if converge_counter >= convergence_trials: 
+                    convergence_flag = True  
+                elif converge_counter >= convergence_trials: 
+                    # tried but not converged
                     print("Give Up!")
                     not_converged=False
                     band_giveUp_counter += 1
@@ -147,6 +152,8 @@ def optimize_stochasticRIR(args):
                 if global_loss < converging_loss:
                     print("converged 2nd Criteria!")
                     band_convergence_counter += 1
+                    band_convergence_counter2 += 1
+                    convergence_flag = True
                 # take the best 
                 print("best params:", best_param_dict)
                 for key in best_param_dict:
@@ -163,22 +170,35 @@ def optimize_stochasticRIR(args):
             print(f"Final model params for band-{j+1}: {final_param_collector}")
             final_param_tensor = list(final_param_collector.values())
             final_param_tensor.append(convergence_flag)
+            final_param_tensor.append(best_param_dict['min_loss'])
+            final_param_tensor.append(i+1)
             k_array[j, :] = torch.tensor(final_param_tensor)
             # 
             if model_used == RIR_model_del:
                 final_K_values = calculate_K_from_delK(final_param_tensor[0], final_param_tensor[1], final_param_tensor[2])
-                print(f"\nFinal K values: Kx: {final_K_values[0]}, Ky: {final_K_values[1]}, Kz: {final_K_values[2]}")                       
-        #   
+                print(f"\nFinal K values: Kx: {final_K_values[0]}, Ky: {final_K_values[1]}, Kz: {final_K_values[2]}")
+                
+            else:
+                final_param_tensor.append(convergence_flag)
+        # print and store K array
         print(f"\n################################### \n K values for all Bands of RIR-{i+1}: \n {label_names} \n {k_array}\n Converged for {band_convergence_counter} bands \n ################################### ")
+        Final_kArray = torch.vstack((Final_kArray, k_array))
+        # check band convergence
         if band_convergence_counter == 6 : rir_convergence_Counter += 1
-        else : rir_notConverged_memory.append((i, band_convergence_counter))    # save rir not converged index
+        else : rir_notConverged_memory.append((i, band_convergence_counter, band_convergence_counter2))    # save rir not converged index
     print(f"--------------\nTotal Rir converged: {rir_convergence_Counter} out of {rir_data.size(0)} \n Rir not converged: {rir_notConverged_memory}\n--------------")
+    if save_K_array : 
+        df = pd.DataFrame(Final_kArray[1:, :])
+        df.columns = label_names
+        f_name = args.fp.split('.')[1] + '_' + str(data_start) + '_' + str(data_count) + '_K_values.txt'
+        df.to_csv(f_name, index=False)
+        #torch.save(Final_kArray, args.fp.split('.')[0] + '_' + data_start+ '_' + data_count + '_K_values.pt')
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Training of SPICE model for F0 estimation')
-    parser.add_argument('--fp', '-filepath', type=str, default="./real_room_ir.npy", help='file path of data')
+    parser.add_argument('--fp', '-filepath', type=str, default="./rirData/ism_140_multi.npy", help='file path of data')
     parser.add_argument('--ds', '-dataStart', type=str, default=0, help='start index of data')
-    parser.add_argument('--de', '-dataEnd', type=str, default=6, help='end index of data')
+    parser.add_argument('--de', '-dataEnd', type=str, default=None, help='end index of data')
     args = parser.parse_args()
 
     optimize_stochasticRIR(args)

@@ -18,7 +18,7 @@ def generate_ism(n_data=400, sr=8000, samples=4096 ):
         # L x H x W
         room_geo  = [np.random.randint(low=60, high=100)/10, np.random.randint(low=50, high=80)/10, np.random.randint(low=40, high=60)/10]
         # random room coeffs
-        room_coeff = np.random.uniform(low=0.4, high=0.99, size=(6)).round(2)
+        room_coeff = np.random.uniform(low=0.1, high=0.99, size=(6)).round(2)
         #room_coeff = np.random.uniform(size=(6)).round(2)
         #room_coeff[room_coeff == 1.0] = 0.99
         # random source and receiver position
@@ -72,11 +72,12 @@ def generate_ism(n_data=400, sr=8000, samples=4096 ):
 
 
 if __name__ == "__main__":
-    n_data = 14
+    n_data = 280
     process_pool = ThreadPoolExecutor(max_workers=7)
     futures=[]
     for i in range(n_data):
         futures.append(process_pool.submit(generate_ism, 1, 48000, 96000))
+        if i%20 == 0 : print(f"epoch: {i}")
         # futures = np.vstack(process_pool.submit(generate_ism, 1, 48000, 96000).result())
     process_pool.shutdown()
     # get data
@@ -84,4 +85,4 @@ if __name__ == "__main__":
     # data = generate_ism(n_data=2, sr=48000, samples=96000)
     print("Total data: ", data.shape)
     # save file
-    np.save(file="rirData/ism_14_new2.npy", arr=data)
+    np.save(file="rirData/ism_280_multi_low.npy", arr=data)

@@ -2,7 +2,7 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --gres=gpu:1
 #SBATCH --time=23:59:00 
-#SBATCH --job-name=arni_withNoise_83_166
+#SBATCH --job-name=ism_140_
 #SBATCH --export=NONE 
 
 unset SLURM_EXPORT_ENV 
@@ -15,4 +15,4 @@ source $HOME/.rir/bin/activate
 cd $HPCVAULT/ShoeboxEnergyDecay_PyTorch
 #ls
 #python --version
-srun python train.py --ds 83 --de 166
+srun python train.py #--ds 83 --de 166
