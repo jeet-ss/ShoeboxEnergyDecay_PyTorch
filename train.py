@@ -3,6 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import argparse
 import pandas as pd
+import os
 
 from model import RIR_model, RIR_model_del
 from optimizer_utils.bandRIR import rir_bands
@@ -32,7 +33,7 @@ def optimize_stochasticRIR(args):
     accepted_loss = 6    # good enough loss to stop searching # dB
     good_loss = 1    # minimum loss required - loss lower than this is arbitrary
     converging_loss = 8    # maximum accepted loss
-    convergence_trials = 5
+    convergence_trials = 7
     lossUpdate_thresh = 0.09
     model_used = RIR_model_del
     known_data = True  # True for generated Data
@@ -190,7 +191,8 @@ def optimize_stochasticRIR(args):
     if save_K_array : 
         df = pd.DataFrame(Final_kArray[1:, :])
         df.columns = label_names
-        f_name = args.fp.split('.')[1] + '_' + str(data_start) + '_' + str(data_count) + '_K_values.txt'
+        f_name = os.path.basename(args.fp).split('.')[0] + '_' + str(data_start) + '_' + str(data_count) + '_K_values.txt'
+        print('file to save data: ', f_name)
         df.to_csv(f_name, index=False)
         #torch.save(Final_kArray, args.fp.split('.')[0] + '_' + data_start+ '_' + data_count + '_K_values.pt')
 
