@@ -9,6 +9,7 @@ from model import RIR_model, RIR_model_del
 from optimizer_utils.bandRIR import rir_bands
 from optimizer_utils.enveloper import envelope_generator, rir_smoothing
 from optimizer_utils.helpers import calculate_damping_coeff, calculate_del_K, calculate_K_from_delK
+from generate_StochasticRIR_del import generate_stochastic_rir_del
 
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -30,19 +31,21 @@ def optimize_stochasticRIR(args):
     device = 'cuda'
     logging_frequency = 100     # epochs  
     stopping_criterion = 200   # epochs \ must be < 0.5* iter
-    accepted_loss = 6    # good enough loss to stop searching # dB
-    good_loss = 1    # minimum loss required - loss lower than this is arbitrary
-    converging_loss = 8    # maximum accepted loss
-    convergence_trials = 7
-    lossUpdate_thresh = 0.09
+    accepted_loss = 30 #6    # good enough loss to stop searching # dB
+    good_loss = 10  # minimum loss required - loss lower than this is arbitrary
+    converging_loss = 70 #9    # maximum accepted loss
+    convergence_trials = 3
+    lossUpdate_thresh = 0.5 #0.1
     model_used = RIR_model_del
+    crit_used = torch.nn.MSELoss()
     known_data = True  # True for generated Data
     save_K_array = True
     #load data
-    data_start = int(args.ds)
-    data_count = int(args.de) if args.de is not None else args.de     # default: None
+    dName = 'ism'
     print(args.fp.split('.')[1])
     data_np = np.load(args.fp, allow_pickle=False)
+    data_start = int(args.ds)
+    data_count = int(args.de) if args.de is not None else data_np.shape[0]     # default: None
     rir_data = torch.tensor(data_np[data_start:data_count, :], dtype=torch.float).to(device=device)
     #
     #
@@ -89,7 +92,7 @@ def optimize_stochasticRIR(args):
                 print(f"\n---- Trial number: {converge_counter} ---- ")
                 # Initialization
                 mod = model_used(device=device).to(device=device)
-                crit = torch.nn.L1Loss().to(device=device)
+                crit = crit_used.to(device=device)
                 optim = torch.optim.SGD(mod.parameters(),lr=lr)
                 init_param_dict = {}
                 print("\nInitial model Params:")
@@ -128,7 +131,7 @@ def optimize_stochasticRIR(args):
                         break
                     if min_loss < good_loss:
                         break
-                    if it%logging_frequency == 0 : print(f'Loss in epoch:{it} ist : {l.detach()}')
+                    if it%logging_frequency == 0 : print(f'Loss in epoch:{it} ist : {np.round(np.float64(l.detach()), decimals=4)}')
                 # converge case
                 if min_loss < accepted_loss: 
                     print("converged!")
@@ -167,38 +170,103 @@ def optimize_stochasticRIR(args):
                     if param.requires_grad:
                         print( name,': ', param.data)
                         final_param_collector.update({name: param.data.detach().cpu()})
-            print(f"\nMin Loss: {best_param_dict['min_loss']} in dB")
+            print(f"\nMin Loss: {np.round(np.float64(best_param_dict['min_loss']), 2)} in dB")
             print(f"Final model params for band-{j+1}: {final_param_collector}")
             final_param_tensor = list(final_param_collector.values())
-            final_param_tensor.append(convergence_flag)
-            final_param_tensor.append(best_param_dict['min_loss'])
-            final_param_tensor.append(i+1)
-            k_array[j, :] = torch.tensor(final_param_tensor)
+            # final_param_tensor.append(convergence_flag)
+            # final_param_tensor.append(best_param_dict['min_loss'])
+            # final_param_tensor.append(i+1)
+            # k_array[j, :] = torch.tensor(final_param_tensor)
             # 
             if model_used == RIR_model_del:
                 final_K_values = calculate_K_from_delK(final_param_tensor[0], final_param_tensor[1], final_param_tensor[2])
-                print(f"\nFinal K values: Kx: {final_K_values[0]}, Ky: {final_K_values[1]}, Kz: {final_K_values[2]}")
-                
+                print(f"\nFinal K values: Kx: {np.round(np.float64(final_K_values[0]), 4)}, Ky: {np.round(np.float64(final_K_values[1]), 4)}, Kz: {np.round(np.float64(final_K_values[2]), 4)}")
             else:
-                final_param_tensor.append(convergence_flag)
+                final_K_values = final_param_tensor
+            final_K_values.append(final_param_tensor[3])
+            final_K_values.append(convergence_flag)
+            final_K_values.append(best_param_dict['min_loss'])
+            final_K_values.append(i+1)
+            k_array[j, :] = torch.tensor(final_K_values)
+
+            # plot graph
+            rootDir = f"./imgs/{dName}_{str(crit_used)[:-2]}_{str(data_start)}_{str(data_count)}"
+            plt.figure(2*i*nBands+2*j+1, figsize=(12,4))
+            plt.suptitle(f"dSet:{dName}, IR:{i+1}, fBand:{j+1}, minLoss:{np.round(np.float64(best_param_dict['min_loss']), 2)}dB")
+            plt.subplot(1,2,1)
+            plt.plot(t_l,)# linestyle='', marker='.')
+            #plt.ylim([0,100])
+            plt.ylabel('loss value in dB')
+            plt.xlabel('Epochs')
+            plt.title("Train Loss")
+            plt.subplot(1,2,2)
+            plt.plot(envelope_generator(
+                    generate_stochastic_rir_del(
+                    del_Kx=init_param_dict['del_Kx'],del_Ky=init_param_dict['del_Ky'],
+                    del_Kz=init_param_dict['del_Kz'],noise_level=init_param_dict['noise_level'], device=device),
+                    gain=signal_gain, clip_=dB_clip, 
+                    normalise=normalize,device=device).detach().cpu(), label='initial')
+            plt.plot(l_env.detach().cpu(),  label='target')
+            plt.plot(envelope_generator(
+                generate_stochastic_rir_del(del_Kx=best_param_dict['del_Kx'],
+                del_Ky=best_param_dict['del_Ky'], del_Kz=best_param_dict['del_Kz'],
+                noise_level=best_param_dict['noise_level'],  device=device),
+                gain=signal_gain, clip_=dB_clip, normalise=normalize,device=device).detach().cpu(), label='best prediction')
+            plt.plot(envelope_generator(
+                mod.forward().detach(), gain=signal_gain,
+                clip_=dB_clip, normalise=normalize,device=device).detach().cpu(), label='final prediction')
+            plt.ylabel('Amplitude in dB')
+            plt.xlabel('Samples')
+            plt.title("RIR envelopes")
+            plt.legend()
+            fig_fName = f"rir_{i+1}_band_{j+1}.jpg"
+            os.makedirs(rootDir+"/results", exist_ok=True)
+            plt.savefig(os.path.join(rootDir+"/results", fig_fName), )
+            plt.close()
+            plt.figure(2*i*nBands+2*j+2, figsize=(6,4))
+            plt.title(f"RIR envelopes, dSet:{dName}, IR:{i+1}, fBand:{j+1}, minLoss:{np.round(np.float64(best_param_dict['min_loss']), 2)}dB")
+            plt.plot(envelope_generator(generate_stochastic_rir_del(del_Kx=init_param_dict['del_Kx'], del_Ky=init_param_dict['del_Ky'], del_Kz=init_param_dict['del_Kz'],  noise_level=init_param_dict['noise_level'], device=device), gain=signal_gain, clip_=dB_clip, normalise=normalize,device=device).detach().cpu(), label='initial')
+            plt.plot(l_env.detach().cpu(),  label='target')
+            plt.plot(envelope_generator(generate_stochastic_rir_del(del_Kx=best_param_dict['del_Kx'], del_Ky=best_param_dict['del_Ky'], del_Kz=best_param_dict['del_Kz'],noise_level=best_param_dict['noise_level'],  device=device), gain=signal_gain, clip_=dB_clip, normalise=normalize,device=device).detach().cpu(), label='best prediction')
+            plt.plot(envelope_generator(mod.forward().detach(), gain=signal_gain, clip_=dB_clip, normalise=normalize,device=device).detach().cpu(), label='final prediction')
+            plt.ylabel('Amplitude in dB')
+            plt.xlabel('Samples')
+            #plt.title("RIR envelopes")
+            plt.legend()
+            fig_fName = f"rir_{i+1}_band_{j+1}.jpg"
+            os.makedirs(rootDir+"/curves", exist_ok=True)
+            plt.savefig(os.path.join(rootDir+"/curves", fig_fName), )
+            plt.close()
         # print and store K array
         print(f"\n################################### \n K values for all Bands of RIR-{i+1}: \n {label_names} \n {k_array}\n Converged for {band_convergence_counter} bands \n ################################### ")
         Final_kArray = torch.vstack((Final_kArray, k_array))
         # check band convergence
         if band_convergence_counter == 6 : rir_convergence_Counter += 1
-        else : rir_notConverged_memory.append((i, band_convergence_counter, band_convergence_counter2))    # save rir not converged index
+        else : rir_notConverged_memory.append((i+1, band_convergence_counter, band_convergence_counter2))    # save rir not converged index
+        
+    
     print(f"--------------\nTotal Rir converged: {rir_convergence_Counter} out of {rir_data.size(0)} \n Rir not converged: {rir_notConverged_memory}\n--------------")
     if save_K_array : 
         df = pd.DataFrame(Final_kArray[1:, :])
         df.columns = label_names
-        f_name = os.path.basename(args.fp).split('.')[0] + '_' + str(data_start) + '_' + str(data_count) + '_K_values.txt'
+        f_name = f"{os.path.basename(args.fp).split('.')[0]}_{str(data_start)}_{str(data_count)}_{str(crit_used)[:-2]}_kValues.txt"
         print('file to save data: ', f_name)
-        df.to_csv(f_name, index=False)
+        df.to_csv(os.path.join(rootDir,f_name), index=False)
         #torch.save(Final_kArray, args.fp.split('.')[0] + '_' + data_start+ '_' + data_count + '_K_values.pt')
+        #print(f"Max:{df['Min_Loss'].max()} and Min:{df['Min_Loss'].min()}")
+        df.drop(df[df.Min_Loss > 1000].index, inplace=True)
+        plt.figure(999999, figsize=(6,4))
+        plt.hist(df['Min_Loss'],rwidth=0.8) #bins=np.arange(np.round(np.float64(df['Min_Loss'].max()))), 
+        #plt.xticks(ticks=np.arange(np.round(np.float64(df['Min_Loss'].max()))),  )
+        plt.title(f"Histogram of Minimum loss values, Min:{np.round(np.float64(df['Min_Loss'].min()),2)},Max:{np.round(np.float64(df['Min_Loss'].max()),2)}")
+        plt.tight_layout()
+        plt_fName = f"Histogram_{dName}_{str(data_start)}_{str(data_count)}_{str(crit_used)[:-2]}.jpg"
+        plt.savefig(os.path.join(rootDir, plt_fName), )
+        plt.close()
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Training of SPICE model for F0 estimation')
-    parser.add_argument('--fp', '-filepath', type=str, default="./rirData/ism_140_multi.npy", help='file path of data')
+    parser.add_argument('--fp', '-filepath', type=str, default="./rirData/ism_280_multi_low.npy", help='file path of data')
     parser.add_argument('--ds', '-dataStart', type=str, default=0, help='start index of data')
     parser.add_argument('--de', '-dataEnd', type=str, default=None, help='end index of data')
     args = parser.parse_args()

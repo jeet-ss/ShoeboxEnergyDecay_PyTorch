@@ -26,4 +26,4 @@ def calculate_K_from_delK(del_Kx, del_Ky, del_Kz):
     '''
     Calculate the damping density coefficients back from the incremental del values
     '''
-    return del_Kx, del_Kx + del_Ky, del_Kz + del_Ky + del_Kx
+    return [del_Kx, del_Kx + del_Ky, del_Kz + del_Ky + del_Kx]
