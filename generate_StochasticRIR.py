@@ -3,7 +3,7 @@ import torch
 from util.applyPressureSource import apply_pressure_source
 from util.analyticDampingDensity import analytic_damping_density
 
-def generate_stochastic_rir(Kx, Ky, Kz, fs=48000, c=343, max_time=2.0, use_pressure_source=False, device='cpu'):
+def generate_stochastic_rir(Kx, Ky, Kz, noise_level=-0.001, fs=48000, c=343, max_time=2.0, use_pressure_source=False, device='cpu'):
 #(max_time, beta, L, c, fs, use_pressure_source=False):
     # Predefine L 
     L = torch.tensor([3,4,5])
@@ -27,13 +27,14 @@ def generate_stochastic_rir(Kx, Ky, Kz, fs=48000, c=343, max_time=2.0, use_press
     # if H.requires_grad : H.register_hook(lambda x : print("H",x[500:510], H.grad_fn,H.data[500:510],torch.any(torch.isnan(x))))
     # uniform sampling of damping density for the decay envelope
     time = torch.arange(1, max_time * fs + 1).to(device=device) / fs
-    envelope = torch.sqrt(torch.clamp(torch.exp(c * time.unsqueeze(1) * sigma) @ H * torch.mean(torch.diff(sigma)), min=torch.tensor(eps).to(device=device)) )
+    envelope = torch.exp(noise_level) + torch.sqrt(torch.clamp(torch.exp(c * time.unsqueeze(1) * sigma) @ H * torch.mean(torch.diff(sigma)), min=torch.tensor(eps).to(device=device)) )
     # if envelope.requires_grad : envelope.register_hook(lambda x : print("envelope",x, envelope.grad_fn, envelope.data,torch.any(torch.isnan(x))))
     # shape noise
-    h = envelope * torch.randn(len(time)).to(device=device)
+    #h = envelope * torch.randn(len(time)).to(device=device)
     # if h.requires_grad : h.register_hook(lambda x : print("h",x, h.grad_fn, h.data,torch.any(torch.isnan(x))))
     # apply pressure source to match the color, but compensate the energy loss
     if use_pressure_source:
         h = apply_pressure_source(h)
 
-    return h#, envelope, H, sigma
+    return envelope
+    #return h#, envelope, H, sigma

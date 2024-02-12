@@ -21,7 +21,7 @@ def mag2db(xcv):
 
 def optimize_stochasticRIR(args):
     # hyper params
-    iter_ = 600
+    iter_ = 900
     lr = 0.000003
     env_filter_len = 4095
     signal_gain = None    # dB
@@ -30,16 +30,20 @@ def optimize_stochasticRIR(args):
     # optimization params
     device = 'cuda'
     logging_frequency = 100     # epochs  
-    stopping_criterion = 200   # epochs \ must be < 0.5* iter
-    accepted_loss = 30 #6    # good enough loss to stop searching # dB
-    good_loss = 10  # minimum loss required - loss lower than this is arbitrary
-    converging_loss = 70 #9    # maximum accepted loss
+    stopping_criterion = 400   # epochs \ must be < 0.5* iter
+    accepted_loss = 6 #30 #6    # good enough loss to stop searching # dB
+    good_loss = 1  # minimum loss required - loss lower than this is arbitrary
+    converging_loss = 10 #70 #10    # maximum accepted loss
     convergence_trials = 3
-    lossUpdate_thresh = 0.5 #0.1
+    lossUpdate_thresh = 0.1 #0.5 #0.1
     model_used = RIR_model_del
-    crit_used = torch.nn.MSELoss()
+    #crit_used = torch.nn.L1Loss()
+    crit_used = torch.nn.SmoothL1Loss(reduction='mean', beta=2.0)#.to(device=device)
+    #crit_used = torch.nn.HuberLoss(reduction='mean', delta=3.0)#.to(device=device)
     known_data = True  # True for generated Data
     save_K_array = True
+    env_st = 0    # 
+    maxTime = (96000-env_st)/48000
     #load data
     dName = 'ism'
     print(args.fp.split('.')[1])
@@ -91,9 +95,10 @@ def optimize_stochasticRIR(args):
                 converge_counter += 1
                 print(f"\n---- Trial number: {converge_counter} ---- ")
                 # Initialization
-                mod = model_used(device=device).to(device=device)
+                mod = model_used(max_time=maxTime, device=device).to(device=device)
                 crit = crit_used.to(device=device)
-                optim = torch.optim.SGD(mod.parameters(),lr=lr)
+                optim = torch.optim.SGD(mod.parameters(),lr=lr, momentum=0.9)
+                scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optim, mode='min', factor=0.9, patience=50)
                 init_param_dict = {}
                 print("\nInitial model Params:")
                 for name, param in mod.named_parameters():
@@ -109,9 +114,10 @@ def optimize_stochasticRIR(args):
                     optim.zero_grad()
                     y_hat = mod.forward()
                     x_env = envelope_generator(y_hat, gain=signal_gain, clip_=dB_clip, normalise=normalize, device=device)
-                    l = crit(x_env, l_env)
+                    l = crit(x_env, l_env[env_st:])
                     l.backward()
                     optim.step()
+                    scheduler.step(l)
                     log_l = l.detach().cpu()
                     t_l.append(log_l)
                     # early stopping
@@ -173,10 +179,6 @@ def optimize_stochasticRIR(args):
             print(f"\nMin Loss: {np.round(np.float64(best_param_dict['min_loss']), 2)} in dB")
             print(f"Final model params for band-{j+1}: {final_param_collector}")
             final_param_tensor = list(final_param_collector.values())
-            # final_param_tensor.append(convergence_flag)
-            # final_param_tensor.append(best_param_dict['min_loss'])
-            # final_param_tensor.append(i+1)
-            # k_array[j, :] = torch.tensor(final_param_tensor)
             # 
             if model_used == RIR_model_del:
                 final_K_values = calculate_K_from_delK(final_param_tensor[0], final_param_tensor[1], final_param_tensor[2])
@@ -190,7 +192,7 @@ def optimize_stochasticRIR(args):
             k_array[j, :] = torch.tensor(final_K_values)
 
             # plot graph
-            rootDir = f"./imgs/{dName}_{str(crit_used)[:-2]}_{str(data_start)}_{str(data_count)}"
+            rootDir = f"./imgs/{dName}_{str(crit_used)[:-2]}_{str(data_start)}_{str(data_count)}_maxTime_mom_sch"
             plt.figure(2*i*nBands+2*j+1, figsize=(12,4))
             plt.suptitle(f"dSet:{dName}, IR:{i+1}, fBand:{j+1}, minLoss:{np.round(np.float64(best_param_dict['min_loss']), 2)}dB")
             plt.subplot(1,2,1)
@@ -203,14 +205,14 @@ def optimize_stochasticRIR(args):
             plt.plot(envelope_generator(
                     generate_stochastic_rir_del(
                     del_Kx=init_param_dict['del_Kx'],del_Ky=init_param_dict['del_Ky'],
-                    del_Kz=init_param_dict['del_Kz'],noise_level=init_param_dict['noise_level'], device=device),
+                    del_Kz=init_param_dict['del_Kz'],noise_level=init_param_dict['noise_level'], max_time=maxTime, device=device),
                     gain=signal_gain, clip_=dB_clip, 
                     normalise=normalize,device=device).detach().cpu(), label='initial')
-            plt.plot(l_env.detach().cpu(),  label='target')
+            plt.plot(l_env.detach().cpu()[env_st:],  label='target')
             plt.plot(envelope_generator(
                 generate_stochastic_rir_del(del_Kx=best_param_dict['del_Kx'],
                 del_Ky=best_param_dict['del_Ky'], del_Kz=best_param_dict['del_Kz'],
-                noise_level=best_param_dict['noise_level'],  device=device),
+                noise_level=best_param_dict['noise_level'], max_time=maxTime, device=device),
                 gain=signal_gain, clip_=dB_clip, normalise=normalize,device=device).detach().cpu(), label='best prediction')
             plt.plot(envelope_generator(
                 mod.forward().detach(), gain=signal_gain,

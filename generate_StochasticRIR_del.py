@@ -3,7 +3,7 @@ import torch
 from util.applyPressureSource import apply_pressure_source
 from util.analyticDampingDensity import analytic_damping_density
 
-def generate_stochastic_rir_del(del_Kx, del_Ky, del_Kz, noise_level=-0.001, fs=48000, c=343, use_pressure_source=False, device='cpu'):
+def generate_stochastic_rir_del(del_Kx, del_Ky, del_Kz, noise_level=-0.001, fs=48000, c=343, max_time = 2.0, use_pressure_source=False, device='cpu'):
     ###
     #
     # This function uses the difference of K's to predict in the correct order
@@ -16,7 +16,7 @@ def generate_stochastic_rir_del(del_Kx, del_Ky, del_Kz, noise_level=-0.001, fs=4
     V = torch.prod(L)
     # 
     eps = 2.2204e-16
-    max_time = 2.0
+    #max_time = 2.0
     fs = 48000
     c = 343
     # derive K's
