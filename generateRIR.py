@@ -5,17 +5,12 @@ import torch
 from shoebox.findAbsCoeffsFromRT import find_abs_coeffs_from_rt
 from util.stochasticRIR import stochastic_rir
 from shoebox.filterRIR import filter_rir
-
+from optimizer_utils.helpers import db2mag, mag2db
 
 # Set the seed for reproducibility
 #torch.manual_seed(1)
 #np.random.seed(1)
 
-def mag2db(arr):
-    return 20 * arr.log10_()
-
-def db2mag(arr):
-    return 10**(arr/20)
 
 
 def generate_stochasticRIR(L, c=343, fs = 48000):

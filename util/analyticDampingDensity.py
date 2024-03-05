@@ -10,7 +10,7 @@ def analytic_damping_density(sigma, K, V, device='cpu'):
     ###
     Kx, Ky, Kz = K
     # if Kx.requires_grad : Kx.register_hook(lambda x : print("Kx (in analytic): ", Kx.grad_fn,Kx.data, torch.isnan(x)))
-    eps=2.2204e-25
+    eps=2.2204e-20
 
     A = -(Kx**2 + Ky**2 + Kz**2)
     # if A.requires_grad : A.register_hook(lambda x : print("A: ",x, A.grad_fn,A.data, torch.any(torch.isnan(x))))
@@ -29,7 +29,6 @@ def analytic_damping_density(sigma, K, V, device='cpu'):
     a2 = Ky
     b = Kz
     c = sigma
-
     function_p = lambda a: torch.clip((torch.Tensor([[1],[-1]]).to(device=device)*torch.acos(torch.clamp((-c / torch.sqrt(a**2 + b**2)), min=torch.tensor(-0.99999).to(device=device), max=torch.tensor(0.99999).to(device=device)))) - torch.atan(-a/b), min=0, max=torch.pi/2)
 
     p0 = function_p(a0) #func_p(a0, b , c)
@@ -44,11 +43,11 @@ def analytic_damping_density(sigma, K, V, device='cpu'):
     H2 = Fint(p2[1, :], p2[0, :])
     # if H1.requires_grad : H1.register_hook(lambda x : print("H1: ",x[:10], H1.grad_fn, H1.data[:10], torch.any(torch.isnan(x))))
 
-    H = 8 / (4 * torch.pi * V) * (2 * H0 - H1 - H2)
+    #H = (8 / (4 * torch.pi * V)) * (2 * H0 - H1 - H2)
+    H = (8 / (V+eps)) * (2 * H0 - H1 - H2)
 
     # only as return values
-    p = torch.stack([p0, p1, p2])
-
+    p = torch.transpose(torch.vstack([p0, p1, p2]), 0,1)
     return H, p
 
 
